@@ -1,7 +1,7 @@
-# Raw input and anything derived from it (contains real identifiers) — never commit
+# Raw input and anything derived from it (contains real identifiers): never commit.
+# data/*.tsv, data/words_en.txt and deid/mapping.py are shipped: the tables carry hashes and labels only.
 input/
 sample_input/
-data/
 out/
 outputs/
 cleaned-corpus/
@@ -9,13 +9,11 @@ attempt-*/
 truth/
 checks/
 *.jsonl
-*.tsv
 manifest*.tsv
 visuals.json
 findings*
 deid-sample-explorer*.html
 tools/curated.py
-mapping*
 *mapping*.json
 pseudonyms*
 

@@ -1,4 +1,4 @@
-"""the teammate's do_image (PNG text chunks), copied verbatim from his process.py so v2 does not import the legacy PDF path."""
+"""Andre's do_image (PNG text chunks), copied verbatim from his process.py so v2 does not import the legacy PDF path."""
 import struct
 import zlib
 

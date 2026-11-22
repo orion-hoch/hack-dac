@@ -3,7 +3,7 @@
 Gap these close (measured in tests/test_andre_system.py): a raw byte matcher cannot see
   * STEP names broken across lines inside a quoted string ("Widefiel\\r\\nd Mirror") or written as \\X2\\...\\X0\\;
   * IGES values split at the 72-column boundary, and values that start right after the Hollerith "nH" prefix
-    (a word-boundary rule rejects "12HJane Doering" because 'H' is a letter).
+    (a word-boundary rule rejects "12HJohn Doe" because 'H' is a letter).
 Method: build the logical string with a byte span per character, run the substitution on the logical text, write
 back only changed characters into their own spans. Stand-ins are same length per character, so no count, column,
 record or sequence number moves. Plain functions (bytes in, bytes out) for reuse by the other pipeline:

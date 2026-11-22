@@ -1,0 +1,14 @@
+Private files travel SEPARATELY from the repository: scp from the Spark straight to the VM. $DEID_HOME = ~/deid.
+  Spark                                              VM                                            what
+  ~/hack-osu/private/pseudo.key                      $DEID_HOME/private/pseudo.key (chmod 600)     stand-in key
+  ~/hack-osu/private/identities_final.json           $DEID_HOME/private/identities_final.json      released name table
+  ~/hack-osu/private/identities_final_scoped.json    $DEID_HOME/private/identities_final_scoped.json  folder-name entries
+  ~/hack-osu/private/manual_identities.tsv, manual_min_ctx.tsv   $DEID_HOME/private/              hand lists (DEID_PRIVATE_DATA)
+  ~/hack-osu/private/parity_standins.json, parity_50.json        $DEID_HOME/private/              parity references
+  ~/hack-osu/private/ocr_cache/  (directory)         $DEID_HOME/private/ocr_cache/                 OCR results by content
+  ~/hack-osu/private/identities_suppliers.json       $DEID_HOME/private/  (only for DEID_SUPPLIERS=replace, with
+                                                     DEID_SUPPLIERS_FILE pointing at it)
+  organisers' upload.py (track page)                 $DEID_HOME/upload.py
+  (a person writes)                                  $DEID_HOME/private/token.txt, team_id.txt
+identities_v3.json and identities_v3_paths.json are rebuilt on the VM by parity_check.sh (code/tools/filter_ids.py).
+  rsync -a ~/hack-osu/private/{pseudo.key,identities_final.json,identities_final_scoped.json,manual_identities.tsv,manual_min_ctx.tsv,parity_standins.json,parity_50.json,ocr_cache} VM:deid/private/

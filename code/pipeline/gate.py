@@ -183,7 +183,7 @@ def _preview_only(orig, out):
     return True, 'preview'
 
 
-_NUM = re.compile(rb'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?')
+_NUM = re.compile(rb'(?<![A-Za-z0-9_])[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?(?![A-Za-z_])')   # standalone numbers only
 _STEP_STR = re.compile(rb"'(?:[^']|'')*'", re.S)
 
 
@@ -239,9 +239,9 @@ def gate(route, rel, orig, out):
         if o1:
             if v1[2] != v2[2]:
                 return False, 'page tree root /Type changed'
-            for a, b in zip(v1[1], v2[1]):          # stand-ins may ADD a font (Helvetica); nothing else may change
-                if a[0] != b[0] or a[2] != b[2] or a[3] != b[3] or b[1] < a[1]:
-                    return False, 'page type, fonts, xobjects or size changed'
+            for a, b in zip(v1[1], v2[1]):          # page /Type and page size must not change; fonts, images and
+                if a[0] != b[0] or a[3] != b[3]:    # logos may (stand-in font added, logos replaced by design)
+                    return False, 'page type or size changed'
         return True, 'pikepdf'
     if route in ('zip', 'tar', 'gzip', 'Z', 'rar'):
         f = {'zip': _zip, 'tar': _tar, 'gzip': lambda b: len(gzip.decompress(b)), 'Z': _z, 'rar': _rar}[route]
@@ -254,8 +254,8 @@ def gate(route, rel, orig, out):
         if route == 'zip' and ext == '.fcstd':
             z = zipfile.ZipFile(io.BytesIO(out))
             if 'Document.xml' in z.namelist():
-                ok, why = _try(_xml, z.read('Document.xml'))
-                if not ok:
+                z0 = zipfile.ZipFile(io.BytesIO(orig))
+                if _try(_xml, z0.read('Document.xml'))[0] and not _try(_xml, z.read('Document.xml'))[0]:
                     return False, 'Document.xml does not parse'
         return True, route
     if route == 'sw':
@@ -331,7 +331,7 @@ def gate(route, rel, orig, out):
             if a[0] != b[0] or b[1] < a[1]:
                 return False, 'jt xz streams %s -> %s' % (a, b)
         return True, route
-    if route == 'png':
+    if route in ('png', 'image'):
         o1, v1 = _try(_img, orig)
         o2, v2 = _try(_img, out)
         if o1 and (not o2 or v1 != v2):

@@ -8,7 +8,7 @@ What it does, in one pikepdf session per file, then a full rewrite (drops stale 
      file names inside strings follow the path plan (ctx.rename).
   3. Page text in pages, form XObjects and annotation appearances (deid/vision/pdftext.py): glyphs deleted with their
      advance kept, stand-in drawn in Helvetica. Sources of edits: mapping.sub_text, per-file needles, and the value next
-     to a title-block label word (DRAWN BY: NJW) on pages that look like drawings.
+     to a title-block label word (DRAWN BY: XQZ) on pages that look like drawings.
   4. Deleted: /PieceInfo (private application data), /Thumb (page thumbnails). Embedded JPEGs: metadata segments
      stripped without re-encoding (deid/vision/imgmeta.py, if present). Logos by hash (deid/vision/logos.py, if present).
   5. Embedded files -> ctx.recurse.

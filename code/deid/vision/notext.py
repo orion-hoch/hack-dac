@@ -11,7 +11,7 @@ Edit per hit box:
 After the edit the page is rendered again and every hit box is read a second time (ocr.verify_gone). If an old string is
 still read, the page's original content (and image) are put back: st['verify'] = 'failed', st['verify_left'] = [...].
 Render: pdfium at DPI (200, vision.md), RGB; OCR results come from the content-addressed cache in ocr.py when present.
-Edit rules: DEID_OCR_RULES (comma list of mapping, extra, label; default all three) on pages the gate calls drawings.
+Edit rules: DEID_OCR_RULES (comma list of mapping, extra, label, fullname, column, url; default all six) on pages the gate calls drawings.
 """
 import io, os, re, zlib, ctypes
 import numpy as np
@@ -22,7 +22,7 @@ from . import pdftext
 
 from .ocr import KW, keywords  # noqa: F401  (gate lives in ocr.py, shared with the image handler)
 DPI = 200
-RULES = tuple(r for r in os.environ.get('DEID_OCR_RULES', 'mapping,extra,label').split(',') if r)
+RULES = tuple(r for r in os.environ.get('DEID_OCR_RULES', 'mapping,extra,label,fullname,column,url').split(',') if r)
 PAINT = {'S': (0, 1), 's': (0, 1), 'f': (1, 0), 'F': (1, 0), 'f*': (1, 0), 'B': (1, 1), 'B*': (1, 1), 'b': (1, 1),
          'b*': (1, 1), 'n': (0, 0)}
 
@@ -282,7 +282,7 @@ def _edit(pdf, page, res, boxes, st):
     """Per hit box: vector lettering (glyph-like paths in the box) -> remove paths and draw the stand-in; no such paths
     and the box inside a page-size image -> paint inside the image (scan); else draw over (the second read decides).
     (Earlier the whole page was treated as a scan when any image covered half the page: a vector drawing with a large
-    render on it then got its image painted while the lettering, outside the image, stayed. Observed on one corpus file, page 2.)"""
+    render on it then got its image painted while the lettering, outside the image, stayed. Observed on ABCD p2.)"""
     instrs = list(pikepdf.parse_content_stream(page))
     mb = [float(x) for x in page.mediabox]; parea = abs((mb[2] - mb[0]) * (mb[3] - mb[1])) or 1.0
     imgs = _images_on_page(instrs, res) if res is not None else []

@@ -3,7 +3,7 @@
 Order: (1) true type by magic bytes; (2) metadata removed without touching coded pixels (deid.vision.imgmeta: JPEG
 segments, PNG chunks, TIFF tags zeroed in place, GIF comment/application extensions); (3) OCR (cached, deid.vision.ocr);
 (4) drawing gate (3+ title-block keywords, ocr.is_drawing): on drawings the rules in DEID_OCR_RULES apply (default
-mapping,extra,label), on everything else only DEID_OCR_RULES_OTHER (default mapping: names already in the table);
+all six, see ocr.py), on everything else only DEID_OCR_RULES_OTHER (default mapping,url: names already in the table);
 (5) only if a hit is found: paint, re-encode, second OCR read of every box. If an old string is still read, the
 metadata-stripped original goes out with status partial and a note.
 Painting keeps every pixel outside the changed ones exactly for lossless formats (PNG, GIF, TIFF, BMP): only changed
@@ -25,8 +25,8 @@ MIN_SIDE = 32
 MAX_PIXELS = 250_000_000
 OCR_PIXELS = 25_000_000
 EXTS = (".png", ".jpg", ".jpeg", ".jpe", ".tif", ".tiff", ".bmp", ".gif")
-RULES_DRAWING = tuple(r for r in os.environ.get("DEID_OCR_RULES", "mapping,extra,label").split(",") if r)
-RULES_OTHER = tuple(r for r in os.environ.get("DEID_OCR_RULES_OTHER", "mapping").split(",") if r)
+RULES_DRAWING = tuple(r for r in os.environ.get("DEID_OCR_RULES", "mapping,extra,label,fullname,column,url").split(",") if r)
+RULES_OTHER = tuple(r for r in os.environ.get("DEID_OCR_RULES_OTHER", "mapping,url").split(",") if r)
 
 
 def _kind(head):

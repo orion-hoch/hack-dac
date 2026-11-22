@@ -158,7 +158,7 @@ def process(data, ctx, tag, preview=None, extra_fields=(), drawing=False):
         if bytes(new) != s:
             o.write(e, bytes(new))
             st["streams_edited"] += 1
-    st["free_bytes_zeroed"] = o.blank_free()
+    st["free_bytes_zeroed"] = o.blank_free(_name_pred(ctx, E))
     out = o.data()
     if out == data:
         return Result(None, status="unchanged", notes=list(dict.fromkeys(E.notes)))
@@ -176,3 +176,23 @@ def process(data, ctx, tag, preview=None, extra_fields=(), drawing=False):
     notes = list(dict.fromkeys(E.notes + notes))
     notes.append("%s stats: %s" % (tag, ",".join("%s=%d" % kv for kv in sorted(st.items()))))
     return Result(out, changed=E.count + st["previews"] + st["pictures"], status="partial" if st["span_nofit"] else "ok", notes=notes)
+
+
+def _name_pred(ctx, E):
+    """True when a free region holds a name: a hit of the mapping's matcher (global table) or one of the identity-field
+    values harvested from this file, in Latin-1/UTF-8 or UTF-16LE. Free bytes without a name are left untouched."""
+    vals = [v for v in getattr(E, 'vals', {}).values() if v and len(v.strip()) >= 2]
+    pats = [x for v in vals for x in (v.encode('latin-1', 'ignore'), v.encode('utf-16-le'))]
+    eng = getattr(getattr(ctx.mapping, 'S', None), 'E', None)
+
+    def pred(b):
+        if not b.strip(b'\x00'):
+            return False
+        low = b.lower()
+        if any(p and p.lower() in low for p in pats):
+            return True
+        if eng is not None:
+            return bool(eng.find(b))
+        return ctx.mapping.sub_bytes(b)[1] > 0
+    return pred
+

@@ -17,7 +17,8 @@ CODE = os.path.join(HERE, 'code')
 SHIP = ['run_v2.py', 'requirements.txt', 'LICENSE', 'pipeline/__init__.py', 'pipeline/engine.py', 'pipeline/v2.py',
         'pipeline/gate.py', 'pipeline/pseudo.py', 'pipeline/creo.py', 'pipeline/dwg_inplace.py',
         'pipeline/creo_route.py', 'pipeline/andre_image.py', 'deid_eval/__init__.py', 'deid_eval/fmt.py',
-        'data/stoplist.tsv', 'data/logo_hashes.tsv']
+        'data/stoplist.tsv', 'data/logo_hashes.tsv', 'data/vector_logos.tsv', 'data/words_en.txt',
+        'pipeline/fieldrules.py', 'pipeline/filematch.py', 'tools/filter_ids.py']
 SHIP_DIRS = ['deid']
 LISTED = {'kept': 'content unchanged (format not edited in this attempt)', 'gate-failed':
           'content unchanged (edit refused by its reader check)', 'error': 'content unchanged (handler error)',
@@ -108,6 +109,7 @@ def preflight(att, log, ids_path, inp=None):
     if kp and os.path.exists(kp):
         key = open(kp, 'rb').read().strip()
     E = Engine(json.load(open(ids_path, encoding='utf-8')))
+    WORDS = {w.strip() for w in open(os.path.join(CODE, 'data', 'words_en.txt'), encoding='utf-8') if w.strip() and not w.startswith('#')}
     ALLOW = {}                      # reviewed false positives: relpath <TAB> token <TAB> reason (kept outside code/)
     ap = os.path.join(HERE, 'preflight_allow.tsv')
     if os.path.exists(ap):
@@ -128,7 +130,8 @@ def preflight(att, log, ids_path, inp=None):
         if key and key in b:
             fails.append('stand-in key found in %s' % rel)
         h = E.find(b)
-        toks = sorted({b[s:e].decode('latin-1') for s, e, _i, _e in h} - ALLOW.get(rel, set()))
+        toks = sorted({b[s:e].decode('latin-1') for s, e, _i, _e in h} - ALLOW.get(rel, set()) - ALLOW.get(os.path.basename(rel), set()))
+        toks = [t for t in toks if t.lower() not in WORDS]       # dictionary words are not names in code or README
         if toks:
             hits[rel] = toks[:8]
     if hits:

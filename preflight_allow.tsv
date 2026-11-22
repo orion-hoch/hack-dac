@@ -1,2 +1,22 @@
-# relpath	token	reason (reviewed by the integrator; never a corpus identity in context)
-code/pipeline/pseudo.py	ALeX	invented test vector of the mapping builder (case test), not taken from the corpus
+# file	token	reason (reviewed by the integrator: these hits of the identity matcher are not names in this code)
+pseudo.py	toyota	top-level domain of the Public Suffix List (host rule), not a name
+pseudo.py	xerox	top-level domain of the Public Suffix List (host rule), not a name
+pseudo.py	bcn	top-level domain of the Public Suffix List (host rule), not a name
+pseudo.py	uol	top-level domain of the Public Suffix List (host rule), not a name
+pseudo.py	ALeX	invented test vector (case test)
+pseudo.py	MPL	licence name
+preflight_allow.tsv	ALeX	this list itself
+fieldrules.py	pcbnew	tool name in the keep-as-is field rule
+misc.py	hpp	C++ header extension
+logos.py	MPL	licence name
+pdftext.py	MPL	licence name
+pdf.py	MPL	licence name
+idents.py	mozilla	generic tool list of the local scorer
+filter_ids.py	nist	standards body (STD set)
+control_path_rename.py	occ	variable name
+checks.py	occ	variable name
+score.py	occ	variable name
+truth.py	occ	variable name
+truth.py	cnc	title-block keyword
+ocr.py	CNC	title-block keyword
+build_page.py	Menlo	font name

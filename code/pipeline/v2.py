@@ -1,4 +1,4 @@
-"""pipeline_v3 routing (file kept as v2.py so imports stay stable): one file in, one gated file out. Integrator's code (MIT), built on the teammate's engine/rename/fmt.
+"""pipeline_v3 routing (file kept as v2.py so imports stay stable): one file in, one gated file out. Integrator's code (MIT), built on Andre's engine/rename/fmt.
 
 process(S, rel, data) -> (out_bytes, rec)   rec: kind, route, n, status, notes
   status: ok (changed and gated) | unchanged | kept (family not edited, listed) | gate-failed (original emitted,
@@ -17,11 +17,13 @@ CODE = os.path.dirname(HERE)
 if CODE not in sys.path:
     sys.path.insert(0, CODE)
 
-from deid_eval import fmt                       # noqa: E402  the teammate's classifier
+from deid_eval import fmt                       # noqa: E402  Andre's classifier
 from .engine import Engine                      # noqa: E402
 from .pseudo import norm, pseudo                # noqa: E402
 from . import gate as G                         # noqa: E402
 
+os.environ.setdefault('DEID_PDF_OCR', '1')        # OCR chain for pages without text and images: ON by default (v3)
+os.environ.setdefault('DEID_OCR_FRESH', '0')      # cache-only OCR by default: a cache miss is 'not read', never fresh
 TEXT_KINDS = {'step', 'dxf', 'svg', 'xml', 'obj', 'wrl', 'text', 'ps'}
 SAME_LEN_TEXT = {'iges', 'sat', 'parasolid'}
 CAD_ZIP = ('.fcstd', '.3mf', '.f3d', '.f3z')
@@ -29,10 +31,8 @@ CAD_ZIP = ('.fcstd', '.3mf', '.f3d', '.f3z')
 # Tier A: routes whose output is emitted. Any other route is computed only when DEID_TIER=all, else the file keeps
 # its content (path renamed). Set after the development-set evaluation (findings/integration.md).
 TIER_A = {'text', 'text_same', 'pdf', 'zip', 'tar', 'gzip', 'Z', 'rar', 'png', 'stl_bin', 'stl_ascii', 'lock',
-          'sw', 'inventor', 'ole_generic', 'creo', 'jt', 'nx', 'catia', '7z', 'parasolid_bin', 'dwg', 'iges', 'step'}
-KEEP_ROUTES = {'step_big': 'KEPT STEP of 200 MB or more (string-slot streaming rewrite not wired in v3)',
-               'bin': 'KEPT unknown binary', 'image_other': 'KEPT image',
-               'ole_other': 'KEPT other OLE'}
+          'sw', 'inventor', 'ole_generic', 'creo', 'jt', 'nx', 'catia', '7z', 'parasolid_bin', 'dwg', 'iges', 'step', 'image', 'bin'}
+KEEP_ROUTES = {}
 PLACEHOLDERS = {'author', 'unknown', 'none', 'user', 'users', 'administrator', 'admin', 'owner', 'open cascade',
                 'anonymous', '(anonymous)', 'default', 'name', 'company', 'organization', 'organisation', 'n/a', 'na',
                 'test', 'student', 'windows user', 'your name', 'designer', 'engineer', 'creator', 'title'}
@@ -72,18 +72,28 @@ class Setup:
                     po[k] = dict(r, mode='word')
         self.P = Engine(po)                     # path-position identities: source folder name only (D11)
         stop = set(PLACEHOLDERS)
+        stop_path = stop_path or os.path.join(CODE, 'data', 'stoplist.tsv')   # tests and tools get the same stop list
         if stop_path and os.path.exists(stop_path):
             for line in open(stop_path, encoding='utf-8'):
                 v = line.split('\t')[0].strip()
                 if v and not v.startswith('#'):
                     stop.add(norm(v))
         self.stop = stop
+        self.Ep = self.E                       # engine for names on disk
+        if os.environ.get('DEID_SUPPLIERS') == 'replace':
+            # switch (coordinator, default off = ruling D3): supplier companies are identities everywhere inside files,
+            # same letter map; names on disk change only where the path plan already renames them
+            sp = os.environ.get('DEID_SUPPLIERS_FILE', os.path.expanduser('~/hack-osu/private/identities_suppliers.json'))
+            sup = _strip_ext(json.load(open(sp, encoding='utf-8')))
+            self.E = Engine({**ids, **sup})
+            self.E.no_fileref = set(sup)
+            self.stop -= {norm(k) for k in sup} | {norm(f) for r in sup.values() for f in r.get('forms', [])}
         self.tier = set(TIER_A) if tier is None else set(tier)
         self.M = Mapping(self)
 
 
 class Mapping:
-    """deid.mapping.Mapping API on top of the teammate's Engine and the team stand-in function, so our handlers (pdf, sw,
+    """deid.mapping.Mapping API on top of Andre's Engine and the team stand-in function, so our handlers (pdf, sw,
     creo, archives, text_step, misc) and his engine produce the same stand-in for the same name."""
     version = 'v2'
 
@@ -142,13 +152,13 @@ class FileMatcher:
 
 
 def rename(S, rel):
-    """the teammate's rename (identity spans in folders and stem, extension never touched) + path-position identities on
+    """Andre's rename (identity spans in folders and stem, extension never touched) + path-position identities on
     the source folder (sources/<kind>/<this>) only. sources/existing/<third> is never renamed by the second step."""
     d, base = os.path.split(rel)
     ef = fmt.ext_full(base)
     stem = base[:len(base) - len(ef)] if ef else base
-    nd = S.E.sub_text(d)[0] if d else d
-    ns = S.E.sub_text(stem)[0]
+    nd = S.Ep.sub_text(d)[0] if d else d
+    ns = S.Ep.sub_text(stem)[0]
     parts = (os.path.join(nd, ns + ef) if nd else ns + ef).split('/')
     first = 3 if parts[:2] == ['sources', 'existing'] else 2      # sources/existing/<x> is never renamed
     for i in range(first if parts[0] == 'sources' else 0, len(parts) - 1):
@@ -179,10 +189,12 @@ def route_of(rel, data):
         return 'parasolid_bin', 'parasolid_bin'
     if kind == 'empty':
         return kind, 'empty'
+    if kind == 'creo' and (not data.startswith(b'#UGC:2') or b'NEUTRAL' in data[:data.find(b'\n')]):
+        return kind, 'text'                           # Creo neutral files (.neu) and old #UGC:1 files are plain text
     if kind in ('pdf', 'zip', 'tar', 'gzip', 'rar', '7z', 'dwg', 'creo', 'bin', 'parasolid_bin'):
         return kind, kind
     if kind == 'image':
-        return kind, 'png' if data[:8] == b'\x89PNG\r\n\x1a\n' else 'image_other'
+        return kind, 'image'                          # pixels builder's image handler (metadata, OCR, paint, verify)
     if kind == 'sw':
         return kind, 'sw'
     if kind == 'ole':
@@ -192,7 +204,7 @@ def route_of(rel, data):
             return kind, 'inventor'
         if ext in ('.par', '.psm', '.asm', '.dft', '.pwd', '.prt'):
             return kind, 'ole_generic'
-        return kind, 'ole_other'
+        return kind, 'ole_generic'                    # any other OLE file: same stream editor, same olefile gate
     if kind == 'stl':
         if len(data) >= 84 and 84 + 50 * struct.unpack_from('<I', data, 80)[0] == len(data):
             return kind, 'stl_bin'
@@ -231,7 +243,7 @@ def _native(S, modname, rel, data, depth):
 
 
 def _do_sw_fast(E, data):
-    """SolidWorks 2015+: the teammate's do_sw method (sections inflated, edited at the same length, re-deflated and NUL-padded
+    """SolidWorks 2015+: Andre's do_sw method (sections inflated, edited at the same length, re-deflated and NUL-padded
     to their original compressed size, CRC updated; no offset moves), with matching restricted to readable text
     (engine.sub_readable, council D9) in sections and in the bytes between them. A section that does not fit stays as
     it is and the file is marked PARTIAL (D5). Selected by DEID_SW=fast; the default is the native handler (fewer names left on 120 files, findings/integration.md)."""
@@ -388,6 +400,11 @@ def _edit(S, route, rel, data, depth):
         r = misc.rewrite_xb(data, lambda t: E.sub_text(t), field)
         out, n = r[0], r[1]
         return (data if out is None else out), n, []
+    if route == 'image':
+        return _native(S, 'image', rel, data, depth)
+    if route == 'bin':                                    # unknown binary: readable text runs only (D9)
+        out, n = E.sub_readable(data)
+        return out, n, []
     if route in ('jt', 'nx', 'catia', 'dwg'):           # dwg: handler sends the original unless LibreDWG agrees
         return _native(S, route, rel, data, depth)
     if route == 'creo':
@@ -402,6 +419,13 @@ def _edit(S, route, rel, data, depth):
     return data, 0, ['no route']
 
 
+def _ocr_misses():
+    import sys as _s
+    m = _s.modules.get('deid.vision.ocr')
+    st = (getattr(m, 'STATS', {}) or {}) if m else {}
+    return st.get('miss', 0) + st.get('not_read', 0)
+
+
 def process(S, rel, data, depth=0):
     kind, route = route_of(rel, data)
     rec = {'kind': kind, 'route': route, 'n': 0, 'status': 'unchanged', 'notes': []}
@@ -412,7 +436,12 @@ def process(S, rel, data, depth=0):
         rec['notes'].append(KEEP_ROUTES.get(route, 'KEPT %s (not in tier A)' % route))
         return data, rec
     try:
+        miss0 = _ocr_misses()
         out, n, notes = _edit(S, route, rel, data, depth)
+        fresh = _ocr_misses() - miss0
+        if fresh:
+            rec['notes'].append('OCR %s %d (not in cache)' % ('fresh reads' if os.environ.get('DEID_OCR_FRESH') == '1' else 'NOT READ', fresh))
+            rec['ocr_not_read'] = fresh if os.environ.get('DEID_OCR_FRESH') != '1' else 0
     except Exception as ex:                                   # a handler error costs only this file
         rec.update(status='error', notes=['ERROR %s: %s' % (type(ex).__name__, str(ex)[:120])])
         if os.environ.get('DEID_DEBUG'):

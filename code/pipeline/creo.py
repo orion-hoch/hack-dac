@@ -217,9 +217,15 @@ def rebuild(d, sec_edits=None, header_edits=None):
         head = head.replace(o, n)
     nl1 = head.find(b"\n")
     first = head[:nl1]
-    m = re.search(rb"([0-9a-f]{8})( \\)$", first)
+    m = re.search(rb"([0-9a-fA-F]+)( \\)$", first)       # V3: old releases write the base in 4 hex digits, not 8
+    if m is None:
+        raise ValueError("creo: base offset field not found in line 1")
     newbase = len(head)
-    head = head[:m.start(1)] + b"%08x" % newbase + head[m.end(1):]
+    w = len(m.group(1))
+    nb = b"%0*x" % (w, newbase)
+    if len(nb) != w:
+        raise ValueError("creo: new base does not fit the field width")
+    head = head[:m.start(1)] + nb + head[m.end(1):]
     secs = sorted(info["secs"], key=lambda s: s["off"])
     out = bytearray(head)
     cur = base

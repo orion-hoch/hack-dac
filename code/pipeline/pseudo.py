@@ -1,6 +1,6 @@
 """Team stand-in function (council ruling D1, 2026-11-21): ONE GLOBAL KEYED LETTER MAP.
 
-Drop-in for the teammate's code/pipeline/pseudo.py: same names and signatures, norm(s) and pseudo(surface, key=None).
+Drop-in for andre's code/pipeline/pseudo.py: same names and signatures, norm(s) and pseudo(surface, key=None).
   * a-z: one keyed single cycle over the 5 vowels and one over the 21 consonants, so vowel->vowel, consonant->consonant,
     no fixed points, a bijection; 0-9: one keyed cycle; case kept. Fullwidth Latin letters and digits follow the same map.
   * accented letters (any base + combining marks, e.g. e-acute, Cyrillic short i): the base walks its own cycle until
@@ -300,7 +300,7 @@ def _split_domain(s):
     last = labels[-1].lower()
     if last not in _TLD:
         # other Public Suffix List endings (.berlin, .studio, .local): only for lower-case host names with no initial
-        # first label, so a person written "j.doe" or "Name.Studio" is never read as a host
+        # first label, so a person written "j.doen" or "Example.Studio" is never read as a host
         if last not in _GTLD or s != s.lower() or len(labels[0].split("@")[-1]) < 2 and not at:
             return None
     k = 2 if len(labels) >= 3 and labels[-2].lower() in _SLD else 1

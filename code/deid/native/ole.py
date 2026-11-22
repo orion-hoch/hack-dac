@@ -151,8 +151,10 @@ class Ole:
             self.d[a:b] = bytes(b - a)
         return nz
 
-    def blank_free(self):
-        """Zero free sectors, stream slack, unused mini sectors and the file tail. Returns non-zero bytes cleared."""
+    def blank_free(self, pred=None):
+        """Zero free sectors, stream slack, unused mini sectors and the file tail. Returns non-zero bytes cleared.
+        V3 (integrator, coordinator decision): with pred, a region is zeroed only when pred(region bytes) is true,
+        i.e. a name was found in it; all other free bytes stay as they were."""
         used = set(self.dir_chain) | set(self.mini_chain) | set(self.mf_chain) | self.meta
         mini_used = set()
         for e in self.streams():
@@ -164,7 +166,7 @@ class Ole:
         z = 0
         for s in range(min(len(self.fat), self.nsec)):
             if self.fat[s] == FREE and s not in used:
-                z += self._zero(self.off(s), self.off(s) + self.ss)
+                z += self._zero_if(pred, self.off(s), self.off(s) + self.ss)
         for e in self.streams():
             r = self.runs(e)
             if not r:
@@ -172,7 +174,7 @@ class Ole:
             o, n = r[-1]
             unit = self.mss if self.is_mini(e) else self.ss
             if n < unit:
-                z += self._zero(o + n, o + unit)
+                z += self._zero_if(pred, o + n, o + unit)
         # unused mini sectors (inside the mini stream's sectors)
         root_size = self.entries[0]["size"]
         for k in range(len(self.mini_chain) * self.ss // self.mss):
@@ -181,10 +183,15 @@ class Ole:
             if o in mini_used:
                 continue
             if pos >= root_size or k >= len(self.minifat) or self.minifat[k] == FREE:
-                z += self._zero(o, o + self.mss)
+                z += self._zero_if(pred, o, o + self.mss)
         # bytes after the last whole sector
-        z += self._zero(self.off(self.nsec), len(self.d))
+        z += self._zero_if(pred, self.off(self.nsec), len(self.d))
         return z
+
+    def _zero_if(self, pred, a, b):
+        if pred is not None and not pred(bytes(self.d[max(0, a):min(len(self.d), b)])):
+            return 0
+        return self._zero(a, b)
 
     def data(self):
         return bytes(self.d)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pipeline_v2 runner (integrator's code, MIT; replaces the teammate's pool loop, keeps his rename and engine).
+"""pipeline_v2 runner (integrator's code, MIT; replaces Andre's pool loop, keeps his rename and engine).
 
   venv/bin/python -I code/run_v2.py --input IN --out OUT/corpus --log PRIVATE/run.jsonl --workers 8 \
       --identities PRIVATE/identities_clean.json --scoped PRIVATE/identities_scoped.json
@@ -74,6 +74,7 @@ def worker(conn, inp, out, mem_gb, max_bytes):
                 _write(dst, res)
                 rec.update(r)
         except MemoryError:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(src, dst)
             rec.update(status='error', n=0, notes=['ERROR MemoryError: original emitted'])
         rec['s'] = round(time.time() - t, 3)
@@ -93,8 +94,8 @@ def main(argv=None):
     ap.add_argument('--files', default='')
     ap.add_argument('--big', type=float, default=200e6)
     ap.add_argument('--max-bytes', type=float, default=1.5e9)
-    ap.add_argument('--mem-gb', type=float, default=3.0)
-    ap.add_argument('--big-mem-gb', type=float, default=8.0)
+    ap.add_argument('--mem-gb', type=float, default=6.0)      # measured: a 179 MB STEP needs more than 3 GB of address space
+    ap.add_argument('--big-mem-gb', type=float, default=12.0)
     ap.add_argument('--timeout', type=float, default=1800)
     ap.add_argument('--tier', default='A', help="A (default) or all")
     a = ap.parse_args(argv)

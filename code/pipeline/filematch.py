@@ -3,7 +3,7 @@
 A handler passes the identity-field values it found in THIS file (author, last saved by, drawn by, checked by,
 including initials of two or three letters). FileValues finds those values inside the same file's decoded text
 slots, in UTF-8 / Latin-1 and UTF-16LE, as whole tokens only:
-  * never right after a format sigil or joiner  / \\ # $ @ & % = _ . - ~  (so /DS, #12=BJD, x.NJW, NJW_part stay);
+  * never right after a format sigil or joiner  / \\ # $ @ & % = _ . - ~  (so /DS, #12=XQZ, x.QZW, QZW_part stay);
   * never right before a letter, digit, _ - = ( ~ ;
   * values of 3 characters or fewer: exact case or all upper case, letters (and dots) only; 4 or more: any case.
 The stand-in is pseudo(surface), so a value gets the same stand-in here as in its field and everywhere else.

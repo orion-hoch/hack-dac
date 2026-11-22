@@ -18,6 +18,7 @@ import re
 import struct
 import numpy as np
 
+U16_RUN = re.compile(rb"(?:[\x20-\x7e\xa0-\xff]\x00){1,512}")   # a run of readable UTF-16LE chars
 MFC_RX = re.compile(rb"\xff\xfe\xff[\x01-\xff]")   # MFC CString slot: ff fe ff <n> (n = ff: u16 length follows) + UTF-16
 
 OS_DIRS = {"public", "default", "default user", "all users", "defaultapppool", "localservice", "networkservice",
@@ -359,6 +360,28 @@ class Editor:
             if "\x00" in t:
                 continue
             sl.append((st, ln, t))
+        # length-prefixed UTF-16 strings (u32 or u16 char count right before the text; Inventor, Solid Edge, DWG):
+        # a parsed slot too (council ruling on DWG point 4)
+        seen = {st for st, _, _ in sl}
+        for mt in U16_RUN.finditer(blob):
+            p, L = mt.start(), (mt.end() - mt.start()) // 2
+            cnt = None
+            if p >= 4:
+                c4 = struct.unpack_from("<I", blob, p - 4)[0]
+                if 1 <= c4 <= L or (c4 == L + 1 and blob[mt.end():mt.end() + 2] == b"\x00\x00"):
+                    cnt = min(c4, L)
+            if cnt is None and p >= 2:
+                c2 = struct.unpack_from("<H", blob, p - 2)[0]
+                if 1 <= c2 <= L or (c2 == L + 1 and blob[mt.end():mt.end() + 2] == b"\x00\x00"):
+                    cnt = min(c2, L)
+            if cnt is None or p in seen:
+                continue
+            try:
+                t = cur[p:p + 2 * cnt].tobytes().decode("utf-16-le")
+            except UnicodeDecodeError:
+                continue
+            if "\x00" not in t:
+                sl.append((p, cnt, t))
         if sl:
             joined = "\x00".join(t for _, _, t in sl)
             j2 = self.edit_free(self.edit_fields(joined), rename=rename)

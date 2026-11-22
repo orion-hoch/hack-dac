@@ -42,8 +42,9 @@ ATTEMPT=attempt-N WORKERS=28 bash vm/run.sh
 ATTEMPT=attempt-N bash vm/upload.sh
 ```
 
-Private inputs (secret key, identity table, parity reference files, upload token) are copied to the machine
-separately. Nothing derived from the raw corpus that still carries a real identifier belongs in this repository.
+Private inputs (secret key, identity table, parity reference files, OCR cache, upload token) are copied to the
+machine separately; `vm/PRIVATE_FILES.txt` lists them. OCR results are read only from a cache filled beforehand
+(`code/tools/ocr_precompute.py`), so a run never depends on which machine does the reading. Nothing derived from the raw corpus that still carries a real identifier belongs in this repository.
 
 ## Limits
 

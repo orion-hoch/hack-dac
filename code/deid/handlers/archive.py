@@ -20,7 +20,7 @@ Plain functions: rewrite_zip(data, recurse, rename, sub, field, member_names=Tru
 import bz2, os, re, shutil, struct, subprocess, tempfile, zlib
 from deid.api import register, Result
 
-HANDLER_VERSION = 3
+HANDLER_VERSION = 4
 MAX_MEMBER = 1_500_000_000
 CAD_ZIP = (".fcstd", ".3mf", ".f3d", ".f3z", ".protein", ".odg", ".odt", ".ods", ".docx", ".xlsx", ".pptx", ".kmz", ".jar")
 UNRAR = os.environ.get("DEID_UNRAR", os.path.expanduser("~/hack-osu/work/gaps/build/unrar/unrar"))
@@ -83,8 +83,15 @@ def rewrite_zip(data, recurse, rename, sub, field=None, member_names=True):
     if e < 0:
         return None, 0, ["zip: no end record"]
     _, _, _, cnt, _, cdsize, cdoff, clen = struct.unpack("<4sHHHHLLH", data[e:e + 22])
+    z64 = None                                   # zip64 end record (slicers write it even for small 3MF files)
     if 0xFFFFFFFF in (cdsize, cdoff) or cnt == 0xFFFF:
-        return None, 0, ["LIMIT zip64 archive kept as is"]
+        if data[e - 20:e - 16] != b"PK\x06\x07":
+            return None, 0, ["LIMIT zip64 archive without locator kept as is"]
+        ro = struct.unpack("<Q", data[e - 12:e - 4])[0]
+        if data[ro:ro + 4] != b"PK\x06\x06":
+            return None, 0, ["LIMIT zip64 record not found, kept as is"]
+        rlen = struct.unpack("<Q", data[ro + 4:ro + 12])[0] + 12
+        cnt, cdsize, cdoff = struct.unpack("<QQQ", data[ro + 32:ro + 56]); z64 = data[ro:ro + rlen]
     comment = data[e + 22:e + 22 + clen]
     recs, p = [], cdoff
     for _ in range(cnt):
@@ -92,14 +99,18 @@ def rewrite_zip(data, recurse, rename, sub, field=None, member_names=True):
         if h[0] != b"PK\x01\x02":
             return None, 0, ["zip: bad central directory"]
         nlen, elen, cl = h[10], h[11], h[12]
-        recs.append({"h": h, "name": data[p + 46:p + 46 + nlen], "extra": data[p + 46 + nlen:p + 46 + nlen + elen],
-                     "comment": data[p + 46 + nlen + elen:p + 46 + nlen + elen + cl]})
+        rec = {"h": h, "name": data[p + 46:p + 46 + nlen], "extra": data[p + 46 + nlen:p + 46 + nlen + elen],
+               "comment": data[p + 46 + nlen + elen:p + 46 + nlen + elen + cl]}
+        rec["need"] = (h[9] == 0xFFFFFFFF, h[8] == 0xFFFFFFFF, h[16] == 0xFFFFFFFF)
+        u, c, o = _z64_get(rec["extra"], *rec["need"])
+        rec["u"] = h[9] if u is None else u; rec["c"] = h[8] if c is None else c; rec["o"] = h[16] if o is None else o
+        recs.append(rec)
         p += 46 + nlen + elen + cl
-    offs = sorted(r["h"][16] for r in recs) + [cdoff]
+    offs = sorted(r["o"] for r in recs) + [cdoff]
     nxt = {offs[i]: offs[i + 1] for i in range(len(offs) - 1)}
     out = bytearray(); enc_names = 0
     for r in recs:
-        h = r["h"]; flags, method, crc, csize, usize, off = h[3], h[4], h[7], h[8], h[9], h[16]
+        h = r["h"]; flags, method, crc, csize, usize, off = h[3], h[4], h[7], r["c"], r["u"], r["o"]
         utf8 = bool(flags & 0x800)
         name = r["name"].decode("utf-8" if utf8 else "cp437", "replace")
         lh = data[off:off + 30]
@@ -143,21 +154,38 @@ def rewrite_zip(data, recurse, rename, sub, field=None, member_names=True):
         if newname != name:
             n += 1
             lextra = _fix_extra(lextra, raw_name, newname); r["extra"] = _fix_extra(r["extra"], raw_name, newname)
+        l64 = struct.unpack("<LL", lh[18:26]) == (0xFFFFFFFF, 0xFFFFFFFF)
+        if l64:                                   # keep the local zip64 form: both sizes in the 0x0001 extra
+            lextra = _z64_set(lextra, True, True, False, usize, csize, 0)
+        lc, lu = (0xFFFFFFFF, 0xFFFFFFFF) if l64 else (csize, usize)
         out += struct.pack(LH, b"PK\x03\x04", h[2], flags, method, h[5], h[6], crc if not flags & 0x08 else 0,
-                           csize if not flags & 0x08 else 0, usize if not flags & 0x08 else 0,
+                           lc if not flags & 0x08 else 0, lu if not flags & 0x08 else 0,
                            len(raw_name), len(lextra)) + raw_name + lextra + comp
-        h2[3], h2[7], h2[8], h2[9] = flags, crc, csize, usize
+        h2[3], h2[7] = flags, crc
+        h2[8] = 0xFFFFFFFF if r["need"][1] else csize; h2[9] = 0xFFFFFFFF if r["need"][0] else usize
+        r["c"], r["u"] = csize, usize
         r["h"] = h2; r["name"] = raw_name
     cd0 = len(out)
     for r in recs:
         h = r["h"]
+        if any(r["need"]):
+            r["extra"] = _z64_set(r["extra"], *r["need"], r["u"], r["c"], r["newoff"])
+        if r["need"][2]:
+            r["newoff"] = 0xFFFFFFFF
         out += struct.pack(CD, b"PK\x01\x02", h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8], h[9], len(r["name"]),
                            len(r["extra"]), len(r["comment"]), h[13], h[14], h[15], r["newoff"]) + r["name"] + r["extra"] + r["comment"]
     ctext = comment.decode("latin-1")
     nc, k = sub(ctext)                         # council D2: 40-hex commit ids stay verbatim
     if nc != ctext and len(nc) == len(ctext):
         comment = nc.encode("latin-1", "replace"); n += 1
-    out += struct.pack("<4sHHHHLLH", b"PK\x05\x06", 0, 0, len(recs), len(recs), len(out) - cd0, cd0, len(comment)) + comment
+    cdn = len(out) - cd0
+    if z64 is not None:
+        ro = len(out)
+        out += z64[:24] + struct.pack("<QQQQ", len(recs), len(recs), cdn, cd0) + z64[56:]
+        out += b"PK\x06\x07" + struct.pack("<LQL", 0, ro, 1)
+        out += struct.pack("<4sHHHHLLH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, len(comment)) + comment
+    else:
+        out += struct.pack("<4sHHHHLLH", b"PK\x05\x06", 0, 0, len(recs), len(recs), cdn, cd0, len(comment)) + comment
     if enc_names:
         notes.append("KEPT %d encrypted member(s): content not readable without the password, names replaced" % enc_names)
     if n:
@@ -171,21 +199,45 @@ _F3D_BIN = re.compile(r"(?:InstanceProperties\.bin|DefinitionIteratorProperties\
                       r"Manifest\.dat|Properties\.dat)$")
 
 
+def _z64_get(extra, need_u, need_c, need_o):
+    if not (need_u or need_c or need_o):
+        return None, None, None
+    for hid, body in _extras(extra)[0]:
+        if hid == 1:
+            vals = list(struct.unpack("<%dQ" % (len(body) // 8), body[:len(body) // 8 * 8])); out = []
+            for need in (need_u, need_c, need_o):
+                out.append(vals.pop(0) if need and vals else None)
+            return tuple(out)
+    return None, None, None
+
+
+def _z64_set(extra, need_u, need_c, need_o, u, c, o):
+    items, rest = _extras(extra); body = b""
+    for need, v in ((need_u, u), (need_c, c), (need_o, o)):
+        if need:
+            body += struct.pack("<Q", v)
+    out = b""; done = False
+    for hid, b in items:
+        if hid == 1:
+            tail = b[len(body):] if len(b) > len(body) else b""      # a trailing disk number stays
+            b = body + tail; done = True
+        out += struct.pack("<HH", hid, len(b)) + b
+    if not done and body:
+        out += struct.pack("<HH", 1, len(body)) + body
+    return out + rest
+
+
 def verify_zip(data, count):
     """Gate: re-read every member from the central directory, decompress it (zstd included) and check CRC and size."""
-    e = data.rfind(b"PK\x05\x06", max(0, len(data) - 65558))
-    if e < 0:
-        return False, "no end record"
-    cnt, cdsize, cdoff = struct.unpack("<HLL", data[e + 10:e + 20])
-    if cnt != count:
+    import io, zipfile
+    try:
+        infos = zipfile.ZipFile(io.BytesIO(data)).infolist()     # zipfile resolves zip64 records and extras
+    except Exception as ex:
+        return False, "zipfile: %s" % type(ex).__name__
+    if len(infos) != count:
         return False, "member count"
-    p = cdoff
-    for _ in range(cnt):
-        h = struct.unpack(CD, data[p:p + 46])
-        if h[0] != b"PK\x01\x02":
-            return False, "central directory"
-        flags, method, crc, csize, usize, off = h[3], h[4], h[7], h[8], h[9], h[16]
-        p += 46 + h[10] + h[11] + h[12]
+    for zi in infos:
+        flags, method, crc, csize, usize, off = zi.flag_bits, zi.compress_type, zi.CRC, zi.compress_size, zi.file_size, zi.header_offset
         if data[off:off + 4] != b"PK\x03\x04":
             return False, "local header"
         if flags & 1 or not usize:
@@ -592,7 +644,7 @@ def rewrite_7z(data, recurse, rename):
     try:
         p = os.path.join(tmp, "out.7z"); write_7z(new, p); out = open(p, "rb").read()
         back = read_7z(out)                                     # gate 1: libarchive re-read, names and bytes
-        if [(x[0], x[1]) for x in back] != [(x[0], x[1]) for x in new]:
+        if sorted((x[0], x[1] or b"") for x in back) != sorted((x[0], x[1] or b"") for x in new):   # 7z may reorder empty entries
             return None, 0, ["KEPT 7z: re-read differs, original kept"]
         if os.path.exists(SEVENZIP):                            # gate 2: an independent reader (7-Zip)
             r = subprocess.run([SEVENZIP, "t", p], capture_output=True, timeout=600)

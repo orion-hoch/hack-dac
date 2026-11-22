@@ -136,7 +136,11 @@ def render_group(evs, path_png, size=160):
     doc[0].render(scale=sc).to_pil().convert('RGB').save(path_png)
 
 
+_KS = {}
+
+
 def load_table(path=None):
+    """sig -> label. Column 6 (if present) is the logo's event count k, kept in _KS for window matching."""
     p = path or os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'vector_logos.tsv')
     t = {}
     if os.path.exists(p):
@@ -144,7 +148,29 @@ def load_table(path=None):
             a = line.rstrip('\n').split('\t')
             if len(a) >= 2 and not a[0].startswith('#'):
                 t[a[0]] = a[1]
+                if len(a) >= 6 and a[5].isdigit():
+                    _KS[a[0]] = int(a[5])
     return t
+
+
+def match_windows(g, logo, ks, max_events=400):
+    """A labelled logo merged into a bigger cluster (e.g. with the file's own title text): compare every window of k
+    consecutive filled paths with the labelled signatures. -> list of (events, bbox)."""
+    out = []; evs = g['evs']; used = set()
+    if len(evs) > max_events:
+        return out
+    for k in ks:
+        if k <= 0 or k >= len(evs):
+            continue
+        i = 0
+        while i + k <= len(evs):
+            if not (used & set(range(i, i + k))) and _sig(evs[i:i + k]) in logo:
+                w = evs[i:i + k]; used |= set(range(i, i + k))
+                out.append((w, (min(e['bb'][0] for e in w), min(e['bb'][1] for e in w), max(e['bb'][2] for e in w), max(e['bb'][3] for e in w))))
+                i += k
+            else:
+                i += 1
+    return out
 
 
 def remove_vector_logos(pdf, table=None, max_pages=3):
@@ -159,7 +185,14 @@ def remove_vector_logos(pdf, table=None, max_pages=3):
             break
         try:
             instrs = list(pikepdf.parse_content_stream(page))
-            hits = [g for g in page_groups(instrs) if g['sig'] in logo]
+            ks = sorted({_KS[x] for x in logo if x in _KS})
+            hits = []
+            for g in page_groups(instrs):
+                if g['sig'] in logo:
+                    hits.append(g)
+                elif ks:
+                    for w, bb in match_windows(g, logo, ks):
+                        hits.append({'ii': sorted({i for e in w for i in e['ii']}), 'bb': bb})
             if hits:
                 drop = {i for g in hits for i in g['ii']}
                 new = [ins for i, ins in enumerate(instrs) if i not in drop]

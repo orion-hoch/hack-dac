@@ -1,0 +1,269 @@
+# normalized value never replaced (generic accounts, tool and vendor strings, standards bodies). Sources: earlier harvest
+# GENERIC, teammate GENERIC, standards and tool lists in build_tables.py
+-
+.
+..
+?
+abc
+acer
+acis
+acrobat
+admin
+admin1
+adminforworker
+administrador
+administrateur
+administrator
+adobe
+afnor
+all
+all users
+anonymous
+ansi
+any
+appdata
+apple
+applications
+ascon
+asme
+astm
+asus
+auteur
+author
+autocad
+autodesk
+autodesk inventor
+autodesk, inc.
+autor
+benutzer
+blender
+bricscad
+bs
+build
+build123d
+buildbot
+cad
+cad exchanger
+cadenas
+cadquery
+cascade
+catia
+ce
+cen
+cenelec
+cern
+cern-ohl
+client
+cliente
+company
+conda
+creo
+csa
+customer
+dassault
+dassault systemes
+data
+datakit
+debian
+default
+default user
+dell
+demo
+design
+designer
+desktop
+din
+docker
+documents
+documents and settings
+downloads
+drafter
+dropbox
+empresa
+en
+engineer
+envs
+etc
+everyone
+example
+excel
+ezdxf
+firma
+folders
+freecad
+fusion
+fusion 360
+gb
+ghostscript
+git
+github
+gmsh
+google drive
+grabcad
+group
+guest
+hewlett-packard
+hewlett-packard company
+home
+hp
+hsmworks
+icloud drive
+iec
+ieee
+iges
+illustrator
+info
+inkscape
+inventor
+iso
+iso/iec
+it
+jenkins
+jis
+kicad
+kompas
+lab
+laptop
+lenovo
+lib
+library
+librecad
+libreoffice
+local
+localservice
+mac
+mac user
+me
+media
+microsoft
+microsoft corporation
+microsoft office
+mnt
+ms
+my company
+my documents
+mycompany
+n/a
+na
+name
+nema
+nobody
+none
+not specified
+null
+nx
+office
+onedrive
+onshape
+open
+open cascade
+opencascade
+openoffice
+openscad
+operator
+opt
+organisation
+organization
+other
+owner
+parasolid
+pc
+pc1
+pi
+powerpoint
+private
+pro/engineer
+program files
+programdata
+proj
+project
+projects
+ptc
+public
+python
+qcad
+rhino
+roaming
+rohs
+root
+runner
+sae
+sample
+sandbox
+scratch
+service
+shared
+siemens
+sketchup
+societe
+solid edge
+solid works
+solidworks
+solidworks corp
+sony
+source
+spatial
+spatial corp
+src
+st-developer
+staff
+step
+steptools
+student
+subject
+support
+sw
+sysadmin
+system
+tbd
+temp
+test
+tester
+thingiverse
+tinkercad
+title
+tmp
+tools
+toshiba
+traceparts
+travis
+ubuntu
+ul
+uni
+unigraphics
+unknown
+unknown author
+unspecified
+user
+user1
+users
+usr
+usuario
+utente
+utilisateur
+vagrant
+var
+vdi
+volumes
+wheel
+win
+win10
+win7
+windows
+windows user
+word
+work
+workspace
+workspaces
+www
+www-data
+x
+xx
+xxx
+your name
+zwcad
+zwsoft
+администратор
+пользователь
+用户
+管理员

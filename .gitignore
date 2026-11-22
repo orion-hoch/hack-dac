@@ -1,13 +1,2 @@
-# private inputs and outputs never belong in the repository
-private/
-out/
-input/
-logs/
-*.key
-token*.txt
-identities*.json
-ocr_cache/
 __pycache__/
 *.pyc
-venv*/
-.DS_Store

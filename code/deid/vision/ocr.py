@@ -158,13 +158,25 @@ def _overlap(a, b):
     return ix * iy / ar
 
 
+def _keylog(what, k):
+    p = os.environ.get("DEID_OCR_KEYLOG")
+    if p:
+        with open(p, "a") as f:
+            f.write("%s\t%s\n" % (what, k))
+
+
 def read_words(img, rotate_pass=True):
     a = _rgb(img)
     k = cache_key(a, rotate_pass)
     e = _cache_get(k)
     if e is not None:
         STATS["hit"] += 1
+        _keylog("hit", k)
         return e["words"]
+    if os.environ.get("DEID_OCR_FRESH", "0") != "1":           # V3: cache decides; a miss is "not read" (no fresh OCR,
+        STATS["not_read"] = STATS.get("not_read", 0) + 1       # x86 and ARM OCR read different text): page or image
+        _keylog("miss", k)                                      # goes out as it would with OCR off
+        return []
     t0 = time.perf_counter()
     words = _read_words_fresh(a, rotate_pass)
     sec = time.perf_counter() - t0
@@ -204,14 +216,15 @@ def _cw(c):
 
 
 LABELS = ["DRAWN BY", "DRAWN", "DRN", "DRAFTED BY", "CHECKED BY", "CHECKED", "CHK", "CHKD", "APPROVED BY", "APPROVED",
-          "APPD", "APPR", "DESIGNED BY", "DESIGNED", "DESIGNER", "DESIGN BY", "ENGINEER", "ENGINEERED BY", "AUTHOR",
-          "AUTHORS", "CREATED BY", "MADE BY", "PREPARED BY", "REVIEWED BY", "NAME", "OWNER", "COMPANY", "CUSTOMER",
-          "CLIENT", "SUPPLIER", "VENDOR", "GEZ", "GEZEICHNET", "GEPR", "GEPRÜFT", "BEARB", "BEARBEITET", "NAME",
+          "APPD", "APPR", "DRN BY", "DWN BY", "CHK BY", "CHKD BY", "APPD BY", "DESIGNED BY", "DESIGNED", "DESIGNER", "DESIGN BY", "ENGINEER", "ENGINEERED BY", "AUTHOR",
+          "AUTHORS", "CREATED BY", "MADE BY", "PREPARED BY", "REVIEWED BY", "OWNER", "COMPANY", "CUSTOMER",
+          "CLIENT", "SUPPLIER", "VENDOR", "GEZ", "GEZEICHNET", "GEPR", "GEPRÜFT", "BEARB", "BEARBEITET",
           "ERSTELLT", "KONSTRUIERT", "FREIGABE", "DESSINÉ", "DESSINE", "VÉRIFIÉ", "VERIFIE", "DISEÑADO", "DIBUJADO",
           "REVISADO", "DISEGNATO", "CONTROLLATO", "PROGETTISTA"]
 # Labels that name a field rather than a person: in title-block templates NAME / COMPANY are often column headers,
 # so they trigger only with a colon and a value on the same line ("COMPANY: ACME"), never through the neighbour search.
-FIELD_LABELS = {"NAME", "OWNER", "COMPANY", "CUSTOMER", "CLIENT", "SUPPLIER", "VENDOR"}
+# "NAME" is not a label at all (run2: "NAME: LEGO Brick", "Playmobil Figure", "Top Level Assm" were part names).
+FIELD_LABELS = {"OWNER", "COMPANY", "CUSTOMER", "CLIENT", "SUPPLIER", "VENDOR"}
 _LBL = sorted({l.upper() for l in LABELS}, key=len, reverse=True)
 _LBL_SET = set(re.sub(r"[^A-Z0-9ÄÖÜÉÈÑ]", "", l) for l in _LBL)
 # words that are never a person or company value
@@ -222,7 +235,9 @@ _NONVAL = _LBL_SET | {"DATE", "DATUM", "SCALE", "SHEET", "SIZE", "TITLE", "REV",
                       "THIRD", "ANGLE", "PROJECTION", "BY", "OF", "AND", "THE", "TO", "FOR", "MFG", "QA", "QC",
                       "APPVD", "APPD", "APPRD", "CHKD", "CHKR", "CKD", "DWN", "DRWN", "DRN", "ENG", "ENGR", "CHECKER",
                       "DRAFTER", "DRAFTSMAN", "APPROVAL", "APPROVALS", "SIGNATURES", "INITIALS", "COMMENTS", "NOTES",
-                      "UNLESSOTHERWISESPECIFIED", "TOLERANCE", "TOL", "SURFACE", "TREATMENT", "HARDNESS", "ITEM"}
+                      "UNLESSOTHERWISESPECIFIED", "TOLERANCE", "TOL", "SURFACE", "TREATMENT", "HARDNESS", "ITEM",
+                      "PAGE", "NAME", "KONTROLLIERT", "GEPRUEFT", "GEPRUFT", "NORM", "BENENNUNG", "ZEICHNUNG", "HOW",
+                      "WHAT", "WHY", "WHERE", "WHEN"}
 _STOP = {"SEE", "NOTES", "NOTE", "CHANGED", "CHANGE", "NONE", "AS", "PER", "STANDARD", "STD", "STEEL", "STAINLESS",
          "ALUMINUM", "ALUMINIUM", "ABS", "PLA", "PETG", "NYLON", "BRASS", "COPPER", "BLACK", "WHITE", "RED", "BLUE",
          "UNLESS", "OTHERWISE", "SPECIFIED", "FIRST", "METRIC", "IMPERIAL", "NA", "N/A", "TBD", "TBC", "ANY",
@@ -259,7 +274,7 @@ def _is_value_token(tok):
     if not t or not re.search(r"[A-Za-zÀ-ÿ]", t):
         return False
     u = re.sub(r"[^A-Z0-9ÄÖÜÉÈÑ]", "", t.upper())
-    if len(re.sub(r"[^A-Z]", "", u)) < 2 or u in _NONVAL or u in _STOP or _DATE.match(t) or _SCALE.match(t) or _SIZE.match(t):
+    if sum(1 for c in t if c.isalpha()) < 2 or u in _NONVAL or u in _STOP or _DATE.match(t) or _SCALE.match(t) or _SIZE.match(t):
         return False
     if any(u[:i] in _STOP | _NONVAL and u[i:] in _STOP | _NONVAL for i in range(2, len(u) - 1)):
         return False                     # glued template words: "SEENOTES"
@@ -294,7 +309,8 @@ def _name_like(text):
 
 def _value_span(text, start):
     """Longest run of name-like tokens in text[start:], as (i0, i1) in text, or None."""
-    toks = [(m.start(), m.end()) for m in re.finditer(r"\S+", text) if m.start() >= start]
+    # a token glued to the label ("DRAWNBY:JOHNSMITH", OCR often drops spaces) contributes its part after `start`
+    toks = [(max(m.start(), start), m.end()) for m in re.finditer(r"\S+", text) if m.end() > start]
     best = None; cur = None
     for s, e in toks:
         if _is_value_token(text[s:e]):
@@ -314,7 +330,7 @@ def _label_end(text):
     """End index of a leading or embedded label in text, or None. Glued 'DRAWNBYJSMITH' is allowed for '... BY'."""
     U = text.upper()
     for l in _LBL:
-        lp = r"\s*".join(re.escape(w) for w in l.split())
+        lp = r"[\s.]*".join(re.escape(w) for w in l.split())
         glue = l.endswith(" BY")
         m = re.search(r"(?<![A-Z0-9ÄÖÜÉÈÑ])" + lp + (r"\.?\s*[:\-]?\s*" if glue else r"(?![A-Z0-9ÄÖÜÉÈÑ])\.?\s*[:\-]?\s*"), U)
         if m:
@@ -343,22 +359,115 @@ def _bounded(t, i0, i1):
     return (i0 == 0 or _edge(t[i0 - 1], t[i0])) and (i1 >= len(t) or _edge(t[i1 - 1], t[i1]))
 
 
-RULES_ALL = ("mapping", "extra", "label")
+RULES_ALL = ("mapping", "extra", "label", "fullname", "column", "url")
+
+
+# --- recall rules (leg 2) --------------------------------------------------------------------------------------
+# (a) fullname: a known identity token inside a name field (after a person label or NAME on its line, or in the cell
+#     right of / below such a label) is extended to the run of capitalised name tokens around it; each token gets its
+#     own stand-in. NAME counts here (a part name rarely holds a known person token) but not in the label rule.
+# (b) column: values under a Name / By column header of an approval table (row starts with a role word) or of a
+#     revision table (header row has REV and DESCRIPTION; then initials only).
+# (c) url / copyright: URL path or host segments and the 1-4 tokens after "copyright" / (c) that the table knows
+#     (mapping.is_identity; German ue/oe/ae spellings folded: "Bluemchen AG" = "Blumchen AG").
+_NF_WORDS = sorted(set(_LBL) | {"NAME", "NAMEN", "NOM", "NOMBRE"}, key=len, reverse=True)
+_NF_SET = set(re.sub(r"[^A-Z0-9ÄÖÜÉÈÑ]", "", l) for l in _NF_WORDS)
+_COLHDR = {"NAME", "NAMEN", "NOM", "NOMBRE", "BY", "INITIALS", "INIT"}
+_ROLE = {"DRAWN", "DRN", "DWN", "DRWN", "DRAFTED", "CHECKED", "CHK", "CHKD", "CKD", "APPROVED", "APPD", "APPR", "APPVD",
+         "DESIGNED", "DESIGN", "ENG", "ENGR", "ENGINEER", "GEZEICHNET", "GEZ", "KONTROLLIERT", "GEPRUFT", "GEPRÜFT",
+         "GEPR", "BEARB", "BEARBEITET", "NORM", "FREIGABE", "ERSTELLT", "KONSTRUIERT", "DESSINE", "DESSINÉ", "VERIFIE",
+         "VÉRIFIÉ", "MFG", "QA", "QC", "AUTHOR", "CREATED", "PREPARED", "REVIEWED", "RELEASED"}
+_REVCTX = {"REV", "REVISION", "DESCRIPTION", "ÄNDERUNG", "AENDERUNG", "ZONE", "ECO", "ECN"}
+_INITIALS = re.compile(r"^[A-Z]{2,4}([./][A-Z]{1,4}){0,2}\.?$")
+_URLCTX = re.compile(r"https?:|www\.|github|gitlab|\.(com|org|net|edu|ch|de|io)\b", re.I)
+_COPY = re.compile(r"(copyright|©|\(c\))\s*", re.I)
+
+
+def _fold(v):
+    v = v.replace("ü", "u").replace("ö", "o").replace("ä", "a").replace("Ü", "U").replace("Ö", "O").replace("Ä", "A")
+    return re.sub(r"(?<=[A-Za-z])([uoaUOA])[eE]", r"\1", v)
+
+
+def _known(mapping, v, source):
+    try:
+        return mapping.is_identity(v, source) or (_fold(v) != v and mapping.is_identity(_fold(v), source))
+    except Exception:
+        return False
+
+
+def _tok_spans(t):
+    return [(m.start(), m.end()) for m in re.finditer(r"\S+", t)]
+
+
+def _core(t, s, e):
+    while s < e and t[s] in ".,:;()'\"[]|":
+        s += 1
+    while e > s and t[e - 1] in ".,:;()'\"[]|":
+        e -= 1
+    return s, e
+
+
+def _namey(tok):
+    return bool(tok) and (tok[0].isupper() or tok.lower() in _PARTICLES) and _is_value_token(tok) \
+        and re.sub(r"[^A-Z0-9ÄÖÜÉÈÑ]", "", tok.upper()) not in _NF_SET | _HEADER
+
+
+def _name_run(t, i, j):
+    """Token spans of the run of name-like tokens containing t[i:j] (whole token), at most 4; None if not a run."""
+    sp = [_core(t, s, e) for s, e in _tok_spans(t)]
+    k = next((n for n, (s, e) in enumerate(sp) if s <= i < e), None)
+    if k is None or sp[k] != (i, j):
+        return None
+    lo = hi = k
+    while lo > 0 and hi - lo < 3 and _namey(t[sp[lo - 1][0]:sp[lo - 1][1]]):
+        lo -= 1
+    while hi < len(sp) - 1 and hi - lo < 3 and _namey(t[sp[hi + 1][0]:sp[hi + 1][1]]):
+        hi += 1
+    while lo < k and t[sp[lo][0]:sp[lo][1]].lower() in _PARTICLES:
+        lo += 1
+    while hi > k and t[sp[hi][0]:sp[hi][1]].lower() in _PARTICLES:
+        hi -= 1
+    return sp[lo:hi + 1] if hi > lo else None
+
+
+def _nf_label_before(t, i):
+    U = t[:i].upper()
+    for l in _NF_WORDS:
+        lp = r"[\s.]*".join(re.escape(w) for w in l.split())
+        if re.search(r"(?<![A-Z0-9ÄÖÜÉÈÑ])" + lp + r"(?![A-Z0-9ÄÖÜÉÈÑ])", U):
+            return True
+    return False
 
 
 def find_hits(words, mapping, source, extra_values=(), rules=RULES_ALL):
     hits = []; taken = {}
+    boxes = [_bbox(w["quad"]) for w in words]
 
     def add(wi, i0, i1, new, why):
         w = words[wi]; old = w["text"][i0:i1]
         if not old.strip() or new == old:
-            return
+            return False
         for (a0, a1) in taken.get(wi, []):
             if i0 < a1 and a0 < i1:
-                return
+                return False
         taken.setdefault(wi, []).append((i0, i1))
         hits.append(dict(word_index=wi, old=old, new=new, quad=_span_quad(w["quad"], w["text"], i0, i1), why=why,
                          span=(i0, i1), angle=w.get("angle", 0)))
+        return True
+
+    def nf_cell(wi):
+        """The word is the cell right of / below a standalone name-field label."""
+        b = boxes[wi]; h = max(1.0, b[3] - b[1])
+        for wk, bk in enumerate(boxes):
+            if wk == wi or words[wk].get("angle", 0) != words[wi].get("angle", 0):
+                continue
+            if _norm(words[wk]["text"])[0] not in _NF_SET:
+                continue
+            if _same_row(b, bk) and -0.8 * h <= b[0] - bk[2] < 12 * h:
+                return True
+            if min(b[2], bk[2]) - max(b[0], bk[0]) > 0.3 * min(b[2] - b[0], bk[2] - bk[0]) and 0 <= b[1] - bk[3] < 2.5 * h:
+                return True
+        return False
 
     ex = []
     for v in (extra_values if "extra" in rules else ()):
@@ -382,8 +491,13 @@ def find_hits(words, mapping, source, extra_values=(), rules=RULES_ALL):
                     j = i
                     while j < len(t) and (nt[j] != t[j] or (not t[j].isalnum() and j + 1 < len(t) and nt[j + 1] != t[j + 1])):
                         j += 1
-                    if _bounded(t, i, j):          # OCR text: names only as whole words ('eprint' in 'Blueprint' is not)
-                        add(wi, i, j, nt[i:j], "mapping")
+                    if _bounded(t, i, j):          # OCR text: names only as whole words ('rint' in 'Blueprint' is not)
+                        run = _name_run(t, i, j) if "fullname" in rules else None
+                        if run and (_nf_label_before(t, run[0][0]) or nf_cell(wi)):
+                            for s0, e0 in run:
+                                add(wi, s0, e0, mapping.sub_field(t[s0:e0], source), "fullname")
+                        else:
+                            add(wi, i, j, nt[i:j], "mapping")
                     i = j
                 else:
                     i += 1
@@ -398,6 +512,22 @@ def find_hits(words, mapping, source, extra_values=(), rules=RULES_ALL):
                         add(wi, i0, i1, mapping.sub_field(t[i0:i1], source), "extra")
                     p = ns.find(v, p + len(v))
         # 3. label rule: the value after a person label in the same OCR line, else the ADJACENT word right or below
+        if "url" in rules and _URLCTX.search(t):
+            for m in re.finditer(r"[A-Za-z0-9][A-Za-z0-9_\-]{3,}", t):
+                if m.group().lower() not in ("http", "https", "github", "gitlab", "www") and _known(mapping, m.group(), source):
+                    add(wi, m.start(), m.end(), mapping.sub_field(m.group(), source), "url")
+        mc = _COPY.search(t) if "url" in rules else None
+        if mc:
+            sp = [_core(t, s0, e0) for s0, e0 in _tok_spans(t) if s0 >= mc.end()][:6]
+            done = False
+            for n in (4, 3, 2, 1):
+                for k in range(0, len(sp) - n + 1):
+                    s0, e0 = sp[k][0], sp[k + n - 1][1]
+                    v = t[s0:e0]
+                    if len(_norm(v)[0]) >= 3 and not v.isdigit() and _known(mapping, v, source):
+                        done = add(wi, s0, e0, mapping.sub_field(v, source), "copyright") or done
+                if done:
+                    break
         lab = _label_end(t) if "label" in rules else None
         if lab is None:
             continue
@@ -418,23 +548,61 @@ def find_hits(words, mapping, source, extra_values=(), rules=RULES_ALL):
             if wj == wi or w2["angle"] != w["angle"]:
                 continue
             b = _bbox(w2["quad"])
-            if _same_row(lb, b) and -0.3 * h <= b[0] - lb[2] < 12 * h:
+            if _same_row(lb, b) and -0.8 * h <= b[0] - lb[2] < 12 * h:
                 if right is None or b[0] < right[0]:
                     right = (b[0], wj)
             elif min(lb[2], b[2]) - max(lb[0], b[0]) > 0.3 * min(lb[2] - lb[0], b[2] - b[0]) and 0 <= b[1] - lb[3] < 2.5 * h:
                 if below is None or b[1] < below[0]:
                     below = (b[1], wj)
-        for cand in (right, below):         # only the adjacent word: never jump over a header to a far cell
+        gaps = []                             # nearest cell first: a value under the label beats a title to its right
+        if right is not None:                 # (run2: "DESIGNED BY" took "Greenhouse - Window" and missed the name below)
+            gaps.append((right[0] - lb[2], right))
+        if below is not None:
+            gaps.append((below[0] - lb[3], below))
+        for _, cand in sorted(gaps, key=lambda g: g[0]):   # only the adjacent word: never jump over a header
             if cand is None:
                 continue
             t2 = words[cand[1]]["text"]
             if _label_end(t2) is not None:
                 continue
+            cb = _bbox(words[cand[1]]["quad"])
+            if (cb[3] - cb[1]) > 2.2 * h:       # a title in a big font, not a value cell (run10: "Top Level Assm")
+                continue
             sp = _value_span(t2, 0)
-            if sp and _name_like(t2[sp[0]:sp[1]]):
+            lead = len(t2) - len(t2.lstrip(" .,:;()'\""))
+            if sp and sp[0] > lead and re.fullmatch(r"(?:[A-Z]\.\s*){1,3}", t2[lead:sp[0]]):
+                sp = (lead, sp[1])               # leading initials belong to the name: "P. COLBACH"
+            if sp and sp[0] == lead and _name_like(t2[sp[0]:sp[1]]):
+                # the value must START the cell ("How to CAD Almost Anything!", "2x4 LEGO Brick" are titles)
                 add(cand[1], sp[0], sp[1], mapping.sub_field(t2[sp[0]:sp[1]], source), "label")
                 break
+    if "column" in rules:
+        _columns(words, boxes, mapping, source, add)
     return hits
+
+
+def _columns(words, boxes, mapping, source, add):
+    for hi, hw in enumerate(words):
+        if _norm(hw["text"])[0] not in _COLHDR:
+            continue
+        hb = boxes[hi]; h = max(1.0, hb[3] - hb[1])
+        row = [_norm(words[k]["text"])[0] for k, b in enumerate(boxes) if k != hi and _same_row(hb, b)]
+        rev = sum(1 for r in row if r in _REVCTX) >= 1 and any(r in ("DESCRIPTION", "ÄNDERUNG", "AENDERUNG", "DATE", "DATUM") for r in row)
+        cells = [k for k, b in enumerate(boxes) if k != hi and words[k].get("angle", 0) == hw.get("angle", 0)
+                 and 0 <= b[1] - hb[3] < 10 * h
+                 and hb[0] - 0.6 * (hb[2] - hb[0]) <= (b[0] + b[2]) / 2 <= hb[2] + 0.6 * (hb[2] - hb[0])]
+        for k in cells:
+            b = boxes[k]; t2 = words[k]["text"]
+            role = any(_norm(words[r]["text"])[0] in _ROLE or _label_end(words[r]["text"]) is not None
+                       for r, br in enumerate(boxes) if r != k and _same_row(b, br) and br[2] <= b[0] + 0.3 * h)
+            s0, e0 = _core(t2, 0, len(t2))
+            v = t2[s0:e0]
+            if not v or _label_end(v) is not None:
+                continue
+            if role and _value_span(t2, 0) and _name_like(v) and all(_is_value_token(x) or x.lower() in _PARTICLES for x in v.split()):
+                add(k, s0, e0, mapping.sub_field(v, source), "column")
+            elif (role or rev) and _INITIALS.match(v) and _is_value_token(v):
+                add(k, s0, e0, mapping.sub_field(v, source), "column")
 
 
 # ---------------------------------------------------------------------------------------------- drawing gate

@@ -5,13 +5,9 @@ only; never rename descriptive words of a collection title, or the scorer cannot
 A project or company identity of two or more tokens is dropped when every token is an English dictionary word (plural-aware), a number,
 a standard designation (d638, m3, 6061) or a standards body. Single-token words were already handled upstream.
 Domains switch from sub to word mode, so 'x.com' never matches inside 'yx.com'."""
-import json, re, sys
-WORDS = set()
-for f in ('american-english', 'british-english'):
-    try:
-        WORDS |= {w.strip() for w in open('/usr/share/dict/' + f, encoding='utf-8', errors='ignore') if w.strip().islower()}
-    except OSError:
-        pass
+import json, os, re, sys
+WORDS = {w.strip() for w in open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'words_en.txt'),
+                                encoding='utf-8') if w.strip() and not w.startswith('#')}   # shipped: no host dependency
 NS_HOSTS = ('w3.org', 'web.resource.org', 'purl.org', 'creativecommons.org', 'inkscape.org', 'sodipodi.sourceforge.net',
             'ns.adobe.com', 'schemas.microsoft.com', 'iptc.org', 'xmlns.com', 'openoffice.org', 'freecad.org', 'ietf.org')
 ARCH = {'amd64', 'x8664', 'win64', 'win32', 'i386', 'i686', 'arm64', 'aarch64', 'intel64', 'em64t', 'ia64'}

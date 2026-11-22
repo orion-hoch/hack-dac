@@ -2,11 +2,11 @@
 
 Survey (all 335 corpus files): no user, host or folder path inside; the only name is the file's own part name (ASCII,
 136 files). So this handler does two things only:
- 1. when the path plan renames the file (3 of 335 under the final table: the old stem -> same-length stand-in), the old stem
+ 1. when the path plan renames the file (3 of 335 under the final table: "Name" -> same-length stand-in), the old stem
     is replaced by the new one inside, as a whole ASCII token inside readable runs (same length);
  2. .CATDrawing: the small JPEG preview (130x110) becomes a flat tile of the same pixel size and byte length (D6).
 It deliberately does NOT run the identity mapping over the file: with the final table, textedit/mapping would turn
-the CATIA keyword "CATStdMechanicalDesign" into "CATStdTidgukaduvBiwaqk" in 85 of 335 files.
+a CATIA keyword that contains a table word into a stand-in in 85 of 335 files.
 Gate: same length; `V5_CFV2` head and the last 64 bytes (`CB__END` trailer) unchanged; changed bytes only in the
 own-name tokens and the JPEG span.
 """

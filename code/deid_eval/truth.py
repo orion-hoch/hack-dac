@@ -186,7 +186,7 @@ def build_automaton(ids):
 
 def mode_for(n, kind, src_kinds):
     if n in {idents.norm(x) for x in idents.MANUAL_MIN_CTX}:
-        return 'slot'      # short acronyms (AWI, OST, BAM...): only as whole path/field tokens
+        return 'slot'      # short acronyms (ABC, XYZ, QRS...): only as whole path/field tokens
     L = len(n)
     if idents.path_only(n):
         return 'slot'

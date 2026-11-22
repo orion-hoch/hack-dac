@@ -1,6 +1,6 @@
 """Byte-level identity substitution with Aho-Corasick.
 
-Original by a teammate, copied into pipeline_v2 on 2026-11-21 17:58 EST. Changes by the integrator, each marked V2:
+Original by Andre (teammate), copied into pipeline_v2 on 2026-11-21 17:58 EST. Changes by the integrator, each marked V2:
   V2-1 one boundary rule for names on disk and names inside files ('slot' rule from for_andre/dropins.patch_engine);
        the `path` flag no longer changes which spans match, so rename(name) == sub_text(name) for every file name.
   V2-2 IGES Hollerith prefix ("12HJohn Doe") counts as a word boundary.
@@ -21,8 +21,10 @@ ENCODINGS = ('utf-8', 'utf-16le')
 _ALNUM = re.compile(r'[0-9a-z]')   # ASCII only: high bytes next to a name are usually binary length/markers
 PATH_SEP = set('/\\:"\'<>|\x00 \t\r\n')
 _PRINT = frozenset(range(0x20, 0x7f)) | {9, 10, 13}
+_FILEREF = re.compile(r'[^\s"\'<>|/\\\x00]{0,60}\.(?:sldprt|sldasm|slddrw|ipt|iam|idw|step|stp|igs|iges|prt|asm|drw|dwg|dxf|stl|pdf|x_t|x_b|sat|jt|catpart|catproduct)', re.I)
 _LETTER = re.compile(rb'[A-Za-z\x80-\xff]')
-_PAYLOAD = re.compile(rb'(?:base64,)?[A-Za-z0-9+/=\r\n]{120,}|[0-9A-Fa-f\r\n ]{128,}')
+_PAYLOAD = re.compile(rb'(?:base64,)?(?:[A-Za-z0-9+/=\r\n]|&#1[03];|&#x[aAdD];){120,}|[0-9A-Fa-f\r\n ]{128,}|<~[!-u\s]*~>')
+_PS_SLOT = re.compile(rb'(?m)^%[^\r\n]*|\((?:[^()\\\r\n]|\\.)*\)')    # PostScript: comment lines and (string) literals
 
 
 def _hollerith_before(low, s):
@@ -61,6 +63,7 @@ class Engine:
                     n += 1
         A.make_automaton() if n else None
         self.A = A if n else None
+        self.no_fileref = set()          # V3-2: ids never replaced right before a file extension (file names on disk)
 
     def _ok_boundary(self, low, s, e, enc, mode, path=False):
         # V2-1: `path` is accepted for compatibility and ignored: one rule for disk names and content.
@@ -95,6 +98,8 @@ class Engine:
         for end, (iid, mode, enc, L) in self.A.iter(low):
             s, e = end - L + 1, end + 1
             if self._ok_boundary(low, s, e, enc, mode, path):
+                if iid in self.no_fileref and _FILEREF.match(low, e):
+                    continue
                 hits.append((s, e, iid, enc))
         hits.sort(key=lambda x: (x[0], -(x[1] - x[0])))
         out, last = [], -1
@@ -135,6 +140,8 @@ class Engine:
         if not hits:
             return hits
         blobs = [(m.start(), m.end()) for m in _PAYLOAD.finditer(data)]
+        ps = data[:4] in (b'%!PS', b'\xc5\xd0\xd3\xc6')
+        slots = [(m.start(), m.end()) for m in _PS_SLOT.finditer(data)] if ps else None
         out = []
         for h in hits:
             s, e = h[0], h[1]
@@ -145,6 +152,8 @@ class Engine:
                 continue
             if any(a <= s < b for a, b in blobs):
                 continue
+            if slots is not None and not any(a <= s and e <= b for a, b in slots):
+                continue                    # PostScript: only comments and string literals, never data or code
             out.append(h)
         return out
 

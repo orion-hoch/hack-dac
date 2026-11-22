@@ -11,13 +11,13 @@ import re
 from deid.api import register, Result
 from deid.handlers.text_step import scrub
 
-HANDLER_VERSION = 2
+HANDLER_VERSION = 3
 TEXT_EXT = (".txt", ".md", ".html", ".htm", ".xml", ".json", ".geojson", ".csv", ".c", ".h", ".cpp", ".hpp", ".py",
             ".m", ".scad", ".kicad_mod", ".kicad_sch", ".kicad_pcb", ".kicad_pro", ".kicad_sym", ".kicad_prl", ".sch",
             ".lib", ".pro", ".cfg", ".ini", ".yaml", ".yml", ".gcode", ".nc", ".ngc", ".mtl", ".obj", ".wrl", ".vrml",
             ".unv", ".x_t", ".xmt_txt", ".sat", ".svg", ".dxf", ".ps", ".eps", ".tex", ".bat", ".sh", ".js", ".css",
             ".ino", ".rst", ".log", ".map", ".md5", ".gitignore", ".lst", ".bom", ".net", ".drl", ".gbr", ".gtl",
-            ".gbl", ".gto", ".gbo", ".gts", ".gbs", ".gko", ".gm1", ".step", ".stp", ".igs", ".iges", ".dat", ".inp")
+            ".model", ".config", ".rels", ".gbl", ".gto", ".gbo", ".gts", ".gbs", ".gko", ".gm1", ".step", ".stp", ".igs", ".iges", ".dat", ".inp")
 
 
 def lockfile(data, field):
@@ -95,7 +95,9 @@ def _is_text(h):
     return h and b"\x00" not in h and sum(1 for b in h if b < 9 or 13 < b < 32) <= len(h) // 100
 
 
-@register("text", lambda p, h: (p.endswith(TEXT_EXT) or p.endswith(".txt")) and _is_text(h), priority=10)
+# Members of archives and CAD containers (3MF .model/.config/.rels, FCStd .xml) are matched by content: their
+# extensions are not on TEXT_EXT, and before this rule they were copied untouched (found 2026-11-21, 3MF census).
+@register("text", lambda p, h: (p.endswith(TEXT_EXT) or "!/" in p) and _is_text(h), priority=10)
 def handle_text(data, ctx):
     try:
         sub, fld = _funcs(ctx)
