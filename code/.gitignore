@@ -1,0 +1,28 @@
+# Raw input and anything derived from it (contains real identifiers) — never commit
+input/
+sample_input/
+data/
+out/
+outputs/
+cleaned-corpus/
+attempt-*/
+truth/
+checks/
+*.jsonl
+*.tsv
+manifest*.tsv
+visuals.json
+findings*
+deid-sample-explorer*.html
+tools/curated.py
+mapping*
+*mapping*.json
+pseudonyms*
+
+# Environments and OS noise
+.venv/
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+.claude/settings.local.json

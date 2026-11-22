@@ -1,0 +1,2 @@
+# relpath	token	reason (reviewed by the integrator; never a corpus identity in context)
+code/pipeline/pseudo.py	ALeX	invented test vector of the mapping builder (case test), not taken from the corpus
